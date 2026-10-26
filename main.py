@@ -1,4 +1,3 @@
-import json
 import math
 import os
 import sys
@@ -7,11 +6,6 @@ from collections import deque
 
 import cv2
 import numpy as np
-
-try:                      
-    import winsound
-except ImportError:
-    winsound = None
 
 CAMERA_INDEX = 0
 FRAME_WIDTH = 640
@@ -43,26 +37,23 @@ WIRE_CONTROL_POINTS = [
     (0.71, 0.48), (0.74, 0.30), (0.79, 0.16), (0.83, 0.22), (0.86, 0.42),
     (0.86, 0.80),
 ]
-LOOP_RADIUS_RATIO = 0.05   
+LOOP_RADIUS_RATIO = 0.05
 WIRE_THICKNESS = 4
 
 COLLISION_RADIUS = 0
-
-GAME_BG_LEVELS = [0.6, 1.0, 0.0]
+GAME_BG_BRIGHTNESS = 0.6
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CURSOR_ASSET_PATH = os.path.join(BASE_DIR, "assets", "cursor.png")
-CURSOR_HIT_ASSET_PATH = os.path.join(BASE_DIR, "assets", "cursor_hit.png")  
-ASSET_SCALE = 1.8          
-ASSET_ANCHOR = (0.5, 0.5)  
+CURSOR_HIT_ASSET_PATH = os.path.join(BASE_DIR, "assets", "cursor_hit.png")
+ASSET_SCALE = 1.8
+ASSET_ANCHOR = (0.5, 0.5)
 
-MAX_LIVES = 3              
-TIME_LIMIT = 60.0          
-HOLD_TO_START = 1.2        
-HOLD_TO_RESUME = 0.5       
+MAX_LIVES = 3
+TIME_LIMIT = 60.0
+HOLD_TO_START = 1.2
+HOLD_TO_RESUME = 0.5 
 HIT_FLASH = 0.5            
-SOUND_ENABLED = True      
-HIGHSCORE_PATH = os.path.join(BASE_DIR, "highscore.json")
 
 
 def nothing(_):
@@ -144,6 +135,7 @@ def compute_centroid(contour):
 
 
 class CursorSmoother:
+
     def __init__(self, mode="ema", alpha=0.35, window=5):
         self.mode = mode
         self.alpha = alpha
@@ -211,12 +203,11 @@ def draw_label(img, text, center, bg, fg):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, fg, 1, cv2.LINE_AA)
 
 
-def render_wire_layer(maze, wire_pts, start, finish, loop_r, show_guide=True):
+def render_wire_layer(maze, wire_pts, start, finish, loop_r):
     h, w = maze.shape
     layer = np.zeros((h, w, 4), dtype=np.uint8)
 
-    if show_guide:
-        layer[maze == 0] = (36, 36, 36, 36)
+    layer[maze == 0] = (36, 36, 36, 36)
 
     cv2.polylines(layer, [wire_pts], False, (30, 30, 30, 255), WIRE_THICKNESS + 2, cv2.LINE_AA)
     cv2.polylines(layer, [wire_pts], False, (205, 205, 210, 255), WIRE_THICKNESS, cv2.LINE_AA)
@@ -253,7 +244,7 @@ def check_collision(maze, pt, radius):
     if not (0 <= x < w and 0 <= y < h):
         return True
     if radius <= 0:
-        return maze[y, x] == 255
+        return bool(maze[y, x] == 255)
 
     x0, x1 = max(0, x - radius), min(w, x + radius + 1)
     y0, y1 = max(0, y - radius), min(h, y + radius + 1)
@@ -276,7 +267,7 @@ def _load_rgba(path, target_w):
     if img.ndim == 2:
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGRA)
     elif img.shape[2] == 3:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)      
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
     h, w = img.shape[:2]
     target_h = max(1, int(round(h * target_w / w)))
     return cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
@@ -291,7 +282,7 @@ def load_cursor_assets(loop_r):
         return None, None
 
     hit = _load_rgba(CURSOR_HIT_ASSET_PATH, target_w)
-    if hit is None:                                        
+    if hit is None:
         hit = normal.copy()
         red = np.array([0, 0, 255], dtype=np.float32)
         hit[..., :3] = (0.5 * hit[..., :3] + 0.5 * red).astype(np.uint8)
@@ -313,48 +304,15 @@ def overlay_rgba(dst, asset, center, anchor=(0.5, 0.5)):
     dst[cy0:cy1, cx0:cx1] = (patch[..., :3] * alpha + roi * (1.0 - alpha)).astype(np.uint8)
 
 
-SOUND_ALIASES = {
-    "start": "SystemDefault",
-    "hit": "SystemHand",
-    "win": "SystemAsterisk",
-    "gameover": "SystemExclamation",
-}
-
-
-def play_sound(kind):
-    if not SOUND_ENABLED or winsound is None:
-        return
-    try:
-        winsound.PlaySound(SOUND_ALIASES[kind], winsound.SND_ALIAS | winsound.SND_ASYNC)
-    except Exception:
-        pass
-
-
-def load_best_time():
-    try:
-        with open(HIGHSCORE_PATH, "r", encoding="utf-8") as f:
-            return float(json.load(f)["best_time"])
-    except Exception:
-        return None
-
-
-def save_best_time(value):
-    try:
-        with open(HIGHSCORE_PATH, "w", encoding="utf-8") as f:
-            json.dump({"best_time": round(value, 2)}, f)
-    except Exception as e:
-        print(f"[WARN] Gagal menyimpan rekor: {e}")
-
-
 READY, PLAYING, RETURN, WIN, GAME_OVER = "READY", "PLAYING", "RETURN", "WIN", "GAME_OVER"
 
 
 class Game:
+
     def __init__(self, start, finish, zone_r):
         self.start = start
         self.finish = finish
         self.zone_r = zone_r
-        self.best_time = load_best_time()
         self.reset()
 
     def reset(self):
@@ -369,7 +327,6 @@ class Game:
         self.hit_flash_until = 0.0
         self.reason = ""
         self.score = 0
-        self.new_record = False
 
     def elapsed(self, now):
         if self.time_start is None:
@@ -386,8 +343,6 @@ class Game:
         self.final_elapsed = now - self.time_start
 
     def update(self, detected, cursor, collided, now):
-        events = []
-
         if self.state in (READY, RETURN):
             need = HOLD_TO_START if self.state == READY else HOLD_TO_RESUME
             if detected and in_zone(cursor, self.start, self.zone_r):
@@ -397,7 +352,6 @@ class Game:
                 if self.hold_progress >= 1.0:
                     if self.state == READY:
                         self.time_start = now
-                        events.append("start")
                     self.state = PLAYING
                     self.hold_since, self.hold_progress = None, 0.0
                     self.prev_collided = False
@@ -407,8 +361,7 @@ class Game:
         if self.state in (PLAYING, RETURN) and self.remaining(now) <= 0:
             self.reason = "WAKTU HABIS"
             self._finish_round(GAME_OVER, now)
-            events.append("gameover")
-            return events
+            return
 
         if self.state == PLAYING and detected:
             if collided and not self.prev_collided:
@@ -418,25 +371,15 @@ class Game:
                 if self.lives <= 0:
                     self.reason = "NYAWA HABIS"
                     self._finish_round(GAME_OVER, now)
-                    events.append("gameover")
                 else:
                     self.state = RETURN
                     self.hold_since, self.hold_progress = None, 0.0
-                    events.append("hit")
             elif not collided and in_zone(cursor, self.finish, self.zone_r):
                 self._finish_round(WIN, now)
-                t = self.final_elapsed
-                self.score = max(0, int(1000 + 300 * self.lives - 10 * t))
-                if self.best_time is None or t < self.best_time:
-                    self.best_time = t
-                    self.new_record = True
-                    save_best_time(t)
-                events.append("win")
+                self.score = max(0, int(1000 + 300 * self.lives - 10 * self.final_elapsed))
             self.prev_collided = collided
         elif not detected:
             self.prev_collided = False
-
-        return events
 
 
 def put_text_outline(img, text, org, scale, color, thickness=2):
@@ -476,7 +419,7 @@ def draw_camera_hud(view, fps, mode, detected, game_state):
     h = view.shape[0]
     cv2.putText(view, "q: keluar | SPACE: ulang game | p: print HSV | r: reset HSV",
                 (10, h - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(view, "m: smoothing | g: pita panduan | b: latar | h: debug",
+    cv2.putText(view, "m: smoothing | h: debug titik collision",
                 (10, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
 
 
@@ -500,18 +443,8 @@ def draw_cursor(view, cursor, loop_r, show_hit, assets, debug_ring):
         cv2.circle(view, cursor, 2, (0, 255, 255), -1)
 
 
-def draw_led(view, on):
-    led = (view.shape[1] - 32, 30)
-    if on:
-        cv2.circle(view, led, 18, (0, 0, 120), -1)
-        cv2.circle(view, led, 10, (0, 0, 255), -1)
-    else:
-        cv2.circle(view, led, 10, (0, 0, 70), -1)
-    cv2.circle(view, led, 12, (200, 200, 200), 1, cv2.LINE_AA)
-
-
 def draw_game_hud(view, game, detected, now):
-    h, w = view.shape[:2]
+    h = view.shape[0]
 
     for i in range(MAX_LIVES):
         draw_heart(view, (26 + i * 34, 30), 12, filled=(i < game.lives))
@@ -519,8 +452,6 @@ def draw_game_hud(view, game, detected, now):
     remaining = game.remaining(now)
     tcolor = (255, 255, 255) if remaining > 10 else (60, 60, 255)
     put_text_center(view, f"WAKTU {remaining:4.1f}", 34, 0.8, tcolor, 2)
-    if game.best_time is not None:
-        put_text_center(view, f"Terbaik: {game.best_time:.1f} dtk", 56, 0.5, (210, 210, 210), 1)
 
     if game.state in (READY, PLAYING, RETURN) and not detected:
         msg, col = "TANGAN TIDAK TERDETEKSI", (0, 165, 255)
@@ -531,7 +462,7 @@ def draw_game_hud(view, game, detected, now):
     elif game.state == PLAYING:
         msg, col = "Ikuti kawat sampai FINISH", (0, 230, 0)
     else:
-        msg = ""
+        msg, col = "", (255, 255, 255)
     if msg:
         put_text_center(view, msg, h - 20, 0.6, col, 2)
 
@@ -543,15 +474,14 @@ def draw_start_progress(view, game):
 
 
 def draw_end_screen(view, game):
-    h, w = view.shape[:2]
+    h = view.shape[0]
     view[:] = (view.astype(np.float32) * 0.35).astype(np.uint8)
 
     if game.state == WIN:
         put_text_center(view, "YOU WIN!", h // 2 - 50, 1.8, (0, 230, 0), 4)
         put_text_center(view, f"Waktu: {game.final_elapsed:.1f} dtk   Skor: {game.score}",
                         h // 2 - 5, 0.8, (255, 255, 255), 2)
-        if game.new_record:
-            put_text_center(view, "REKOR BARU!", h // 2 + 30, 0.8, (0, 215, 255), 2)
+        put_text_center(view, f"Tabrakan: {game.hits}", h // 2 + 30, 0.7, (200, 200, 200), 2)
     else:
         put_text_center(view, "GAME OVER", h // 2 - 50, 1.8, (60, 60, 255), 4)
         put_text_center(view, game.reason, h // 2 - 5, 0.8, (255, 255, 255), 2)
@@ -566,7 +496,6 @@ def draw_game_view(view, game, cursor, loop_r, detected, collided, assets, debug
     if detected:
         draw_cursor(view, cursor, loop_r, show_hit, assets, debug_ring)
     draw_start_progress(view, game)
-    draw_led(view, show_hit)
     draw_game_hud(view, game, detected, now)
 
     if game.state in (WIN, GAME_OVER):
@@ -590,19 +519,13 @@ def main() -> None:
     cv2.moveWindow(WINDOW_GAME, fw + 20, 0)
 
     maze, wire_pts, start, finish, loop_r = build_maze(fw, fh)
-    layers = {
-        True: prepare_layer(render_wire_layer(maze, wire_pts, start, finish, loop_r, True)),
-        False: prepare_layer(render_wire_layer(maze, wire_pts, start, finish, loop_r, False)),
-    }
+    layer = prepare_layer(render_wire_layer(maze, wire_pts, start, finish, loop_r))
     assets = load_cursor_assets(loop_r)
     game = Game(start, finish, loop_r)
 
-    show_guide = True
-    debug_ring = False
-    bg_index = 0
-
-    smoother = CursorSmoother(SMOOTH_MODE, EMA_ALPHA, MA_WINDOW)
     smooth_mode = SMOOTH_MODE
+    smoother = CursorSmoother(smooth_mode, EMA_ALPHA, MA_WINDOW)
+    debug_ring = False
 
     fps = 0.0
     prev_time = time.time()
@@ -615,7 +538,7 @@ def main() -> None:
         if MIRROR:
             frame = cv2.flip(frame, 1)
 
-        camera_view = frame.copy()  
+        camera_view = frame.copy()
 
         lower, upper, ksize, iters = read_controls()
         mask = clean_mask(segment_color(frame, lower, upper), ksize, iters)
@@ -634,8 +557,7 @@ def main() -> None:
 
         now = time.time()
         collided = detected and check_collision(maze, smooth_pt, COLLISION_RADIUS)
-        for event in game.update(detected, smooth_pt, collided, now):
-            play_sound(event)
+        game.update(detected, smooth_pt, collided, now)
 
         dt = now - prev_time
         prev_time = now
@@ -645,7 +567,7 @@ def main() -> None:
         draw_camera_hud(camera_view, fps, smooth_mode, detected, game.state)
         cv2.imshow(WINDOW_CAMERA, camera_view)
 
-        game_view = compose_game_view(frame, layers[show_guide], GAME_BG_LEVELS[bg_index])
+        game_view = compose_game_view(frame, layer, GAME_BG_BRIGHTNESS)
         draw_game_view(game_view, game, smooth_pt, loop_r, detected, collided,
                        assets, debug_ring, now)
         cv2.imshow(WINDOW_GAME, game_view)
@@ -655,7 +577,7 @@ def main() -> None:
         key = cv2.waitKey(1) & 0xFF
         if key in (ord("q"), 27):
             break
-        elif key == 32:                       
+        elif key == 32:
             game.reset()
             print("[INFO] Game diulang.")
         elif key == ord("p"):
@@ -663,12 +585,6 @@ def main() -> None:
                   f"kernel={ksize} iterasi={iters}")
         elif key == ord("r"):
             reset_controls()
-        elif key == ord("g"):
-            show_guide = not show_guide
-            print(f"[INFO] Pita panduan: {'TAMPIL' if show_guide else 'SEMBUNYI (mode sulit)'}")
-        elif key == ord("b"):
-            bg_index = (bg_index + 1) % len(GAME_BG_LEVELS)
-            print(f"[INFO] Kecerahan latar game: {GAME_BG_LEVELS[bg_index]}")
         elif key == ord("h"):
             debug_ring = not debug_ring
         elif key == ord("m"):
