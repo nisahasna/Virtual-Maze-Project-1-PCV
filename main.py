@@ -1,239 +1,167 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Oct 25 00:37:25 2026
-
-@author: ASUS
-"""
+import sys
+import time
 
 import cv2
 import numpy as np
-import time
+
+CAMERA_INDEX = 0
+FRAME_WIDTH = 640
+FRAME_HEIGHT = 480
+MIRROR = True
+
+WINDOW_MAIN = "Virtual Maze - Camera Feed"
+WINDOW_MASK = "Mask (Hasil Segmentasi)"
+WINDOW_RESULT = "Result (Hanya Area Biru)"
+WINDOW_CTRL = "Controls (HSV & Morfologi)"
+
+# Nilai awal rentang HSV untuk warna BIRU.
+# Ingat: di OpenCV, Hue berskala 0-179 (bukan 0-360), S & V berskala 0-255.
+DEFAULT_HSV = {
+    "H Min": 100, "H Max": 130,
+    "S Min": 120, "S Max": 255,
+    "V Min": 70,  "V Max": 255,
+}
+DEFAULT_KERNEL = 2   # ukuran kernel sebenarnya = 2*nilai + 1 (selalu ganjil)
+DEFAULT_ITER = 2     # berapa kali opening/closing diulang
 
 
-HSV_LOWER_1 = np.array([0,  30,  50])
-HSV_UPPER_1 = np.array([25, 255, 255])
+def nothing(_):
+    """Callback kosong yang dibutuhkan createTrackbar."""
+    pass
 
-HSV_LOWER_2 = np.array([165, 20,  50])
-HSV_UPPER_2 = np.array([179, 180, 255])
 
-MIN_CONTOUR_AREA = 3000
-
-MORPH_KERNEL_SIZE = (5, 5)
-
-NUM_ZONES = 4
-
-COLOR_ZONE_LINE  = (200, 200, 200)
-COLOR_CONTOUR    = (0, 255, 0) 
-COLOR_CENTROID   = (0, 0, 255)   
-COLOR_BBOX       = (255, 165, 0)
-COLOR_TEXT_OK    = (0, 255, 100)
-COLOR_TEXT_MISS  = (0, 60, 255)
-COLOR_FPS        = (180, 180, 180)
-
-def create_mask(frame: np.ndarray) -> np.ndarray:
-    blurred = cv2.GaussianBlur(frame, (5, 5), 0)
-    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-    mask1 = cv2.inRange(hsv, HSV_LOWER_1, HSV_UPPER_1)
-    mask2 = cv2.inRange(hsv, HSV_LOWER_2, HSV_UPPER_2)
-    mask  = cv2.bitwise_or(mask1, mask2)
-    
-    kernel = np.ones(MORPH_KERNEL_SIZE, np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
-    return mask
-
-def detect_object(mask: np.ndarray):
-    contours, _ = cv2.findContours(
-    mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-
-    if not contours:
-        return None
-    
-    best_contour = max(contours, key=cv2.contourArea)
-    
-    if cv2.contourArea(best_contour) < MIN_CONTOUR_AREA:
-        return None
-
-    return best_contour
-
-def get_centroid(contour: np.ndarray):
-    M = cv2.moments(contour)
-
-    if M["m00"] == 0:
-        return None
-
-    cx = int(M["m10"] / M["m00"])
-    cy = int(M["m01"] / M["m00"])
-    return cx, cy
-
-def get_zone(cx: int, frame_width: int) -> int:
-    zone_index = int(cx * NUM_ZONES / frame_width)
-    return min(zone_index, NUM_ZONES - 1)
-
-def draw_zones(frame: np.ndarray, active_zone: int | None = None) -> None:
-    h, w = frame.shape[:2]
-    zone_width = w // NUM_ZONES
-
-    for i in range(1, NUM_ZONES):
-        x = i * zone_width
-        cv2.line(frame, (x, 0), (x, h), COLOR_ZONE_LINE, 1)
-    
-    for i in range(NUM_ZONES):
-        label_x = i * zone_width + zone_width // 2 - 20
-        cv2.putText(
-            frame, f"Z{i + 1}",
-            (label_x, 25),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-            COLOR_ZONE_LINE, 1, cv2.LINE_AA
-        )
-        
-    if active_zone is not None:
-        overlay = frame.copy()
-        x1 = active_zone * zone_width
-        x2 = x1 + zone_width
-        cv2.rectangle(overlay, (x1, 0), (x2, h), (0, 255, 180), -1)
-        cv2.addWeighted(overlay, 0.15, frame, 0.85, 0, frame)
-    
-def draw_detection(
-    frame: np.ndarray,
-    contour,
-    centroid,
-    active_zone: int | None
-) -> None:
-    
-    if contour is not None:
-        cv2.drawContours(frame, [contour], -1, COLOR_CONTOUR, 2)
-
-        x, y, bw, bh = cv2.boundingRect(contour)
-        cv2.rectangle(frame, (x, y), (x + bw, y + bh), COLOR_BBOX, 2)
-
-    if centroid is not None:
-        cx, cy = centroid
-        
-        cv2.circle(frame, (cx, cy), 8, COLOR_CENTROID, -1)
-        cv2.circle(frame, (cx, cy), 10, (255, 255, 255), 1)
-    
-        zone_label = f"Zone {active_zone + 1}" if active_zone is not None else ""
-        cv2.putText(
-            frame, zone_label,
-            (cx + 15, cy - 10),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-            COLOR_TEXT_OK, 2, cv2.LINE_AA
-        )
-
-def draw_status(
-    frame: np.ndarray,
-    detected: bool,
-    active_zone: int | None,
-    fps: float
-) -> None:
-    h, w = frame.shape[:2]
-
-    if detected and active_zone is not None:
-        status_text = f"DETECTED  |  Zone {active_zone + 1} of {NUM_ZONES}"
-        color = COLOR_TEXT_OK
-    else:
-        status_text = "Object Not Detected"
-        color = COLOR_TEXT_MISS
-
-    cv2.putText(
-        frame, status_text,
-        (10, h - 45),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-        color, 2, cv2.LINE_AA
-    )
-    cv2.putText(
-        frame, f"FPS: {fps:.1f}",
-        (10, h - 15),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-        COLOR_FPS, 1, cv2.LINE_AA
-    )
-    cv2.putText(
-        frame, "Q: Quit  |  R: Reset",
-        (w - 220, h - 15),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-        COLOR_FPS, 1, cv2.LINE_AA
-    )
-
-# MAIN LOOP
-def main() -> None:
-    cap = cv2.VideoCapture(0)
-
+def open_camera(index: int, width: int, height: int) -> cv2.VideoCapture:
+    cap = cv2.VideoCapture(index)
     if not cap.isOpened():
-        print("[ERROR] Webcam tidak dapat dibuka.")
-        print("        Pastikan kamera terhubung dan tidak digunakan aplikasi lain.")
-        return
+        print(f"[ERROR] Tidak bisa membuka kamera dengan index {index}.")
+        sys.exit(1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    print(f"[INFO] Kamera terbuka. Resolusi: {actual_w}x{actual_h}")
+    return cap
 
-    print("[INFO] Webcam berhasil dibuka.")
-    print("[INFO] Tekan Q untuk keluar, R untuk reset.")
-    print(f"[INFO] Mendeteksi HSV range-1: {HSV_LOWER_1.tolist()} - {HSV_UPPER_1.tolist()}")
-    print(f"[INFO] Mendeteksi HSV range-2: {HSV_LOWER_2.tolist()} - {HSV_UPPER_2.tolist()}")
 
-    detection_reset = False
+def create_controls() -> None:
+    """Membuat jendela kontrol berisi trackbar HSV dan morfologi."""
+    cv2.namedWindow(WINDOW_CTRL, cv2.WINDOW_AUTOSIZE)
+    cv2.createTrackbar("H Min", WINDOW_CTRL, DEFAULT_HSV["H Min"], 179, nothing)
+    cv2.createTrackbar("H Max", WINDOW_CTRL, DEFAULT_HSV["H Max"], 179, nothing)
+    cv2.createTrackbar("S Min", WINDOW_CTRL, DEFAULT_HSV["S Min"], 255, nothing)
+    cv2.createTrackbar("S Max", WINDOW_CTRL, DEFAULT_HSV["S Max"], 255, nothing)
+    cv2.createTrackbar("V Min", WINDOW_CTRL, DEFAULT_HSV["V Min"], 255, nothing)
+    cv2.createTrackbar("V Max", WINDOW_CTRL, DEFAULT_HSV["V Max"], 255, nothing)
+    cv2.createTrackbar("Kernel", WINDOW_CTRL, DEFAULT_KERNEL, 10, nothing)
+    cv2.createTrackbar("Iterasi", WINDOW_CTRL, DEFAULT_ITER, 5, nothing)
 
+
+def read_controls():
+    """Membaca nilai trackbar saat ini. Mengembalikan (lower, upper, ksize, iters)."""
+    h_min = cv2.getTrackbarPos("H Min", WINDOW_CTRL)
+    h_max = cv2.getTrackbarPos("H Max", WINDOW_CTRL)
+    s_min = cv2.getTrackbarPos("S Min", WINDOW_CTRL)
+    s_max = cv2.getTrackbarPos("S Max", WINDOW_CTRL)
+    v_min = cv2.getTrackbarPos("V Min", WINDOW_CTRL)
+    v_max = cv2.getTrackbarPos("V Max", WINDOW_CTRL)
+    k = cv2.getTrackbarPos("Kernel", WINDOW_CTRL)
+    iters = cv2.getTrackbarPos("Iterasi", WINDOW_CTRL)
+
+    lower = np.array([h_min, s_min, v_min], dtype=np.uint8)
+    upper = np.array([h_max, s_max, v_max], dtype=np.uint8)
+    ksize = 2 * k + 1          # dipaksa ganjil (1, 3, 5, ..., 21)
+    iters = max(1, iters)      # minimal 1 kali
+    return lower, upper, ksize, iters
+
+
+def reset_controls() -> None:
+    """Mengembalikan semua trackbar ke nilai awal."""
+    for name, value in DEFAULT_HSV.items():
+        cv2.setTrackbarPos(name, WINDOW_CTRL, value)
+    cv2.setTrackbarPos("Kernel", WINDOW_CTRL, DEFAULT_KERNEL)
+    cv2.setTrackbarPos("Iterasi", WINDOW_CTRL, DEFAULT_ITER)
+    print("[INFO] Trackbar di-reset ke nilai awal.")
+
+
+def segment_color(frame, lower, upper):
+    """BGR -> (blur) -> HSV -> inRange. Hasilnya mask biner (255 = biru)."""
+    blurred = cv2.GaussianBlur(frame, (5, 5), 0)   # redam noise sensor kamera
+    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+    return cv2.inRange(hsv, lower, upper)
+
+
+def clean_mask(mask, ksize, iters):
+    """
+    Opening  (erosi -> dilasi): menghapus bintik putih kecil di luar objek.
+    Closing  (dilasi -> erosi): menutup lubang kecil di dalam objek.
+    """
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksize, ksize))
+    opened = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=iters)
+    closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel, iterations=iters)
+    return closed
+
+
+def draw_hud(frame, fps: float) -> None:
+    cv2.putText(frame, f"FPS: {fps:.1f}", (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+    cv2.putText(frame, "q/ESC: keluar | p: print nilai | r: reset",
+                (10, frame.shape[0] - 12),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+
+
+def main() -> None:
+    cap = open_camera(CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT)
+    cv2.namedWindow(WINDOW_MAIN, cv2.WINDOW_AUTOSIZE)
+    cv2.namedWindow(WINDOW_MASK, cv2.WINDOW_AUTOSIZE)
+    cv2.namedWindow(WINDOW_RESULT, cv2.WINDOW_AUTOSIZE)
+    create_controls()
+
+    fps = 0.0
     prev_time = time.time()
 
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("[WARNING] Frame tidak berhasil dibaca. Mencoba lagi...")
-            continue
+            print("[ERROR] Gagal membaca frame dari kamera.")
+            break
 
-        frame = cv2.flip(frame, 1)
-        frame_w = frame.shape[1]
+        if MIRROR:
+            frame = cv2.flip(frame, 1)
 
-        mask = create_mask(frame)
+        # 1. Baca parameter dari trackbar
+        lower, upper, ksize, iters = read_controls()
 
-        contour     = None
-        centroid    = None
-        active_zone = None
+        # 2. Segmentasi warna biru, lalu bersihkan noise
+        raw_mask = segment_color(frame, lower, upper)
+        mask = clean_mask(raw_mask, ksize, iters)
 
-        if not detection_reset:
-            contour = detect_object(mask)
+        # 3. Tampilkan hanya piksel asli yang lolos mask
+        result = cv2.bitwise_and(frame, frame, mask=mask)
 
-            if contour is not None:
-                centroid = get_centroid(contour)
+        # FPS
+        now = time.time()
+        dt = now - prev_time
+        prev_time = now
+        if dt > 0:
+            fps = 0.9 * fps + 0.1 * (1.0 / dt) if fps > 0 else 1.0 / dt
 
-            if centroid is not None:
-                cx, _ = centroid
-                active_zone = get_zone(cx, frame_w)
-
-        detected = (centroid is not None)
-
-        curr_time = time.time()
-        fps = 1.0 / max(curr_time - prev_time, 1e-6)
-        prev_time = curr_time
-
-        display_frame = frame.copy()
-        draw_zones(display_frame, active_zone)
-        draw_detection(display_frame, contour, centroid, active_zone)
-        draw_status(display_frame, detected, active_zone, fps)
-        
-        cv2.imshow("ColorBeat | Hand Detection", display_frame)
-
-        mask_display = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-        cv2.putText(
-            mask_display, "Binary Mask (HSV Segmentation)",
-            (10, 25),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.65,
-            (200, 200, 200), 1, cv2.LINE_AA
-        )
-        cv2.imshow("ColorBeat | Binary Mask", mask_display)
+        draw_hud(frame, fps)
+        cv2.imshow(WINDOW_MAIN, frame)
+        cv2.imshow(WINDOW_MASK, mask)
+        cv2.imshow(WINDOW_RESULT, result)
 
         key = cv2.waitKey(1) & 0xFF
-        if key == ord('q') or key == ord('Q'):
-            print("[INFO] Program dihentikan oleh pengguna.")
+        if key in (ord("q"), 27):
             break
-        elif key == ord('r') or key == ord('R'):
-            detection_reset = not detection_reset
-            status = "AKTIF (deteksi dijeda)" if detection_reset else "NONAKTIF (deteksi berjalan)"
-            print(f"[INFO] Reset toggle: {status}")
+        elif key == ord("p"):
+            print(f"[HSV] lower={lower.tolist()} upper={upper.tolist()} "
+                  f"kernel={ksize} iterasi={iters}")
+        elif key == ord("r"):
+            reset_controls()
 
     cap.release()
     cv2.destroyAllWindows()
-    print("[INFO] Webcam dilepaskan. Semua jendela ditutup.")
+    print("[INFO] Program selesai.")
 
 
 if __name__ == "__main__":
