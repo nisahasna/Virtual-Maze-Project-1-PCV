@@ -9,24 +9,21 @@ FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 MIRROR = True
 
-WINDOW_MAIN = "Virtual Maze - Camera Feed"
+WINDOW_MAIN = "Virtual Maze"
 WINDOW_MASK = "Mask (Hasil Segmentasi)"
 WINDOW_RESULT = "Result (Hanya Area Biru)"
 WINDOW_CTRL = "Controls (HSV & Morfologi)"
 
-# Nilai awal rentang HSV untuk warna BIRU.
-# Ingat: di OpenCV, Hue berskala 0-179 (bukan 0-360), S & V berskala 0-255.
 DEFAULT_HSV = {
     "H Min": 100, "H Max": 130,
     "S Min": 120, "S Max": 255,
     "V Min": 70,  "V Max": 255,
 }
-DEFAULT_KERNEL = 2   # ukuran kernel sebenarnya = 2*nilai + 1 (selalu ganjil)
-DEFAULT_ITER = 2     # berapa kali opening/closing diulang
+DEFAULT_KERNEL = 2   
+DEFAULT_ITER = 2    
 
 
 def nothing(_):
-    """Callback kosong yang dibutuhkan createTrackbar."""
     pass
 
 
@@ -44,7 +41,6 @@ def open_camera(index: int, width: int, height: int) -> cv2.VideoCapture:
 
 
 def create_controls() -> None:
-    """Membuat jendela kontrol berisi trackbar HSV dan morfologi."""
     cv2.namedWindow(WINDOW_CTRL, cv2.WINDOW_AUTOSIZE)
     cv2.createTrackbar("H Min", WINDOW_CTRL, DEFAULT_HSV["H Min"], 179, nothing)
     cv2.createTrackbar("H Max", WINDOW_CTRL, DEFAULT_HSV["H Max"], 179, nothing)
@@ -57,7 +53,6 @@ def create_controls() -> None:
 
 
 def read_controls():
-    """Membaca nilai trackbar saat ini. Mengembalikan (lower, upper, ksize, iters)."""
     h_min = cv2.getTrackbarPos("H Min", WINDOW_CTRL)
     h_max = cv2.getTrackbarPos("H Max", WINDOW_CTRL)
     s_min = cv2.getTrackbarPos("S Min", WINDOW_CTRL)
@@ -75,7 +70,6 @@ def read_controls():
 
 
 def reset_controls() -> None:
-    """Mengembalikan semua trackbar ke nilai awal."""
     for name, value in DEFAULT_HSV.items():
         cv2.setTrackbarPos(name, WINDOW_CTRL, value)
     cv2.setTrackbarPos("Kernel", WINDOW_CTRL, DEFAULT_KERNEL)
@@ -84,17 +78,12 @@ def reset_controls() -> None:
 
 
 def segment_color(frame, lower, upper):
-    """BGR -> (blur) -> HSV -> inRange. Hasilnya mask biner (255 = biru)."""
     blurred = cv2.GaussianBlur(frame, (5, 5), 0)   # redam noise sensor kamera
     hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
     return cv2.inRange(hsv, lower, upper)
 
 
 def clean_mask(mask, ksize, iters):
-    """
-    Opening  (erosi -> dilasi): menghapus bintik putih kecil di luar objek.
-    Closing  (dilasi -> erosi): menutup lubang kecil di dalam objek.
-    """
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksize, ksize))
     opened = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=iters)
     closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel, iterations=iters)
@@ -128,17 +117,13 @@ def main() -> None:
         if MIRROR:
             frame = cv2.flip(frame, 1)
 
-        # 1. Baca parameter dari trackbar
         lower, upper, ksize, iters = read_controls()
 
-        # 2. Segmentasi warna biru, lalu bersihkan noise
         raw_mask = segment_color(frame, lower, upper)
         mask = clean_mask(raw_mask, ksize, iters)
 
-        # 3. Tampilkan hanya piksel asli yang lolos mask
         result = cv2.bitwise_and(frame, frame, mask=mask)
 
-        # FPS
         now = time.time()
         dt = now - prev_time
         prev_time = now
