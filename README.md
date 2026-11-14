@@ -235,9 +235,7 @@ Jika `assets/cursor.png` tidak ditemukan, game memakai kursor berbentuk **cincin
 
 ---
 
-## 7. Screenshot dan Demo
-
-### Screenshot
+## 7. Screenshot
 
 | Camera Tracking | Virtual Maze | Mask Segmentasi |
 |---|---|---|
