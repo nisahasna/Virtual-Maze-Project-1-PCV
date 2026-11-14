@@ -98,8 +98,6 @@ Proyek ini menunjukkan bahwa sebuah antarmuka berbasis gerakan tangan bisa diban
 ├── assets/
 │   ├── cursor.png       # kursor normal (opsional)
 │   └── cursor_hit.png   # kursor saat menabrak (opsional)
-├── docs/
-│   └── screenshots/     # gambar untuk bagian Screenshot dan Demo
 └── README.md
 ```
 
@@ -243,17 +241,17 @@ Jika `assets/cursor.png` tidak ditemukan, game memakai kursor berbentuk **cincin
 
 | Camera Tracking | Virtual Maze | Mask Segmentasi |
 |---|---|---|
-| ![Camera Tracking](docs/screenshots/camera-tracking.png) | ![Virtual Maze](docs/screenshots/virtual-maze.png) | ![Mask](docs/screenshots/mask.png) |
+| ![Camera Tracking](assets/Camera-Tracking.png) | ![Virtual Maze](access/Virtual-Maze.png) | ![Mask](access/Mask-Hasil-Segmentasi.png) |
 
 | Trackbar HSV | Layar YOU WIN | Layar GAME OVER |
 |---|---|---|
-| ![Controls](docs/screenshots/controls.png) | ![You Win](docs/screenshots/you-win.png) | ![Game Over](docs/screenshots/game-over.png) |
+| ![Controls](assets/Trackbar%20HSV.png) | ![Game Over](assets/Layar%20Game%20Over.png) |
 
-### Demo
+```### Demo
 
 ![Demo gameplay](docs/demo.gif)
 
-Video lengkap: *(tautan video demo)*
+Video lengkap: *(tautan video demo)*```
 
 ---
 
