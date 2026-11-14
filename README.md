@@ -244,7 +244,7 @@ Jika `assets/cursor.png` tidak ditemukan, game memakai kursor berbentuk **cincin
 | ![Camera Tracking](assets/Camera-Tracking.png) | ![Virtual Maze](access/Virtual-Maze.png) | ![Mask](access/Mask-Hasil-Segmentasi.png) |
 
 | Trackbar HSV | Layar GAME OVER |
-|---|---|---|
+|---|---|
 | ![Controls](assets/Trackbar%20HSV.png) | ![Game Over](assets/Layar%20Game%20Over.png) |
 
 ---
