@@ -247,12 +247,6 @@ Jika `assets/cursor.png` tidak ditemukan, game memakai kursor berbentuk **cincin
 |---|---|---|
 | ![Controls](assets/Trackbar%20HSV.png) | ![Game Over](assets/Layar%20Game%20Over.png) |
 
-```### Demo
-
-![Demo gameplay](docs/demo.gif)
-
-Video lengkap: *(tautan video demo)*```
-
 ---
 
 ## 8. Catatan Pengembangan
